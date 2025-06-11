@@ -225,13 +225,20 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
         if use_atr_for_sl
             if bullishOBStrength == "Strong"
                 sl_long := entry_price_long - (atrValue * sl_strong_atr_multiplier)
-                sl_style_long := line.style_solid; sl_width_long := 2
-                tp_style_long := line.style_solid; tp_width_long := 2
+                sl_style_long := line.style_solid
+                sl_width_long := 2
+                tp_style_long := line.style_solid
+                tp_width_long := 2
             else if bullishOBStrength == "Moderate"
                 sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier)
+                // sl_style_long and sl_width_long remain default (dashed, 1)
+                // tp_style_long and tp_width_long remain default (dashed, 1)
             else // Weak
                 sl_long := entry_price_long - (atrValue * sl_weak_atr_multiplier)
-                sl_style_long := line.style_dotted; tp_style_long := line.style_dotted
+                sl_style_long := line.style_dotted
+                sl_width_long := 1 // Explicitly set width for weak
+                tp_style_long := line.style_dotted
+                tp_width_long := 1 // Explicitly set width for weak
         else
             sl_long := entry_price_long - (fixed_sl_pips * syminfo.mintick) // Fixed pip SL
 
@@ -324,13 +331,20 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
         if use_atr_for_sl
             if bearishOBStrength == "Strong"
                 sl_short := entry_price_short + (atrValue * sl_strong_atr_multiplier)
-                sl_style_short := line.style_solid; sl_width_short := 2
-                tp_style_short := line.style_solid; tp_width_short := 2
+                sl_style_short := line.style_solid
+                sl_width_short := 2
+                tp_style_short := line.style_solid
+                tp_width_short := 2
             else if bearishOBStrength == "Moderate"
                 sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier)
+                // sl_style_short and sl_width_short remain default (dashed, 1)
+                // tp_style_short and tp_width_short remain default (dashed, 1)
             else // Weak
                 sl_short := entry_price_short + (atrValue * sl_weak_atr_multiplier)
-                sl_style_short := line.style_dotted; tp_style_short := line.style_dotted
+                sl_style_short := line.style_dotted
+                sl_width_short := 1 // Explicitly set width for weak
+                tp_style_short := line.style_dotted
+                tp_width_short := 1 // Explicitly set width for weak
         else
             sl_short := entry_price_short + (fixed_sl_pips * syminfo.mintick)
 
