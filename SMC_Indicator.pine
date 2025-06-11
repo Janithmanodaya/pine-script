@@ -92,12 +92,13 @@ isLH = not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh < prevS
 // A Higher Low (HL) is formed if the latest swing low is higher than the previous swing low.
 isHL = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow
 
-// Plot Market Structure markers if enabled by user.
-if showMarketStructure
-    plotshape(isHH, title="Higher High", location=location.abovebar, color=color.green, style=shape.triangledown, size=size.small)
-    plotshape(isLL, title="Lower Low", location=location.belowbar, color=color.red, style=shape.triangleup, size=size.small)
-    plotshape(isLH, title="Lower High", location=location.abovebar, color=color.orange, style=shape.triangledown, size=size.small)
-    plotshape(isHL, title="Higher Low", location=location.belowbar, color=color.blue, style=shape.triangleup, size=size.small)
+// Plot Market Structure markers
+// The 'series' argument itself incorporates the showMarketStructure condition.
+// If showMarketStructure is false, the condition for plotting the shape becomes false.
+plotshape(series=isHH and showMarketStructure, title="Higher High", location=location.abovebar, color=color.green, style=shape.triangledown, size=size.small)
+plotshape(series=isLL and showMarketStructure, title="Lower Low", location=location.belowbar, color=color.red, style=shape.triangleup, size=size.small)
+plotshape(series=isLH and showMarketStructure, title="Lower High", location=location.abovebar, color=color.orange, style=shape.triangledown, size=size.small)
+plotshape(series=isHL and showMarketStructure, title="Higher Low", location=location.belowbar, color=color.blue, style=shape.triangleup, size=size.small)
 
 // Section: Order Block (OB), SL/TP, and Strength Variables
 // Variables for storing OB details, SL/TP lines, and active levels.
@@ -221,26 +222,38 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
         tp_style_long = line.style_dashed
         tp_width_long = 1
 
-        // Calculate SL based on ATR or fixed pips, and signal strength
+        // Calculate SL based on ATR or fixed pips
         if use_atr_for_sl
-            if bullishOBStrength == "Strong"
-                sl_long := entry_price_long - (atrValue * sl_strong_atr_multiplier)
-                sl_style_long := line.style_solid
-                sl_width_long := 2
-                tp_style_long := line.style_solid
-                tp_width_long := 2
-            else if bullishOBStrength == "Moderate"
-                sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier)
-                // sl_style_long and sl_width_long remain default (dashed, 1)
-                // tp_style_long and tp_width_long remain default (dashed, 1)
-            else // Weak
-                sl_long := entry_price_long - (atrValue * sl_weak_atr_multiplier)
-                sl_style_long := line.style_dotted
-                sl_width_long := 1 // Explicitly set width for weak
-                tp_style_long := line.style_dotted
-                tp_width_long := 1 // Explicitly set width for weak
+            // ATR-based SL calculation (actual price set based on strength below, this is just for example if fixed ATR mult was used)
+            // This part of the logic could be simplified if sl_long is always set based on strength multipliers
+            // For now, we calculate a base SL and then adjust if needed, or just set it directly in strength checks
+            sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier) // Default ATR SL for calculation base
         else
             sl_long := entry_price_long - (fixed_sl_pips * syminfo.mintick) // Fixed pip SL
+
+        // Determine SL price AND Style/Width based on strength, AFTER SL price is initially determined by ATR/Fixed
+        if bullishOBStrength == "Strong"
+            if use_atr_for_sl
+                sl_long := entry_price_long - (atrValue * sl_strong_atr_multiplier)
+            // If fixed SL, sl_long remains as calculated above (fixed_sl_pips)
+            sl_style_long := line.style_solid
+            sl_width_long := 2
+            tp_style_long := line.style_solid
+            tp_width_long := 2
+        else if bullishOBStrength == "Moderate"
+            if use_atr_for_sl
+                sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier)
+            sl_style_long := line.style_dashed
+            sl_width_long := 1
+            tp_style_long := line.style_dashed
+            tp_width_long := 1
+        else // Weak
+            if use_atr_for_sl
+                sl_long := entry_price_long - (atrValue * sl_weak_atr_multiplier)
+            sl_style_long := line.style_dotted
+            sl_width_long := 1
+            tp_style_long := line.style_dotted
+            tp_width_long := 1
 
         // Calculate TP based on Risk/Reward ratio
         risk_amount_long = entry_price_long - sl_long
@@ -264,8 +277,8 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
                 bullishTPline := line.new(bar_index[1], tp_long, bar_index, tp_long, extend=extend.right, color=tp_long_color, style=tp_style_long, width=tp_width_long)
             activeBullishSL := sl_long // Store active SL/TP levels
             activeBullishTP := tp_long
-    else if not isValidOBMinSize // If OB doesn't meet min size, ensure flag is false
-        newBullishOBDetectedThisBar := false
+    // Removed redundant: else if not isValidOBMinSize newBullishOBDetectedThisBar := false
+    // newBullishOBDetectedThisBar is already false by default and only set true if isValidOBMinSize is true.
 
 // --- Bearish Order Block (OB) Identification, Strength Assessment, and Plotting ---
 var bool newBearishOBDetectedThisBar = false // Flag for new bearish OB alert
@@ -331,26 +344,34 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
         tp_style_short = line.style_dashed
         tp_width_short = 1
 
-        // Calculate SL
+        // Calculate SL based on ATR or fixed pips
         if use_atr_for_sl
-            if bearishOBStrength == "Strong"
-                sl_short := entry_price_short + (atrValue * sl_strong_atr_multiplier)
-                sl_style_short := line.style_solid
-                sl_width_short := 2
-                tp_style_short := line.style_solid
-                tp_width_short := 2
-            else if bearishOBStrength == "Moderate"
-                sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier)
-                // sl_style_short and sl_width_short remain default (dashed, 1)
-                // tp_style_short and tp_width_short remain default (dashed, 1)
-            else // Weak
-                sl_short := entry_price_short + (atrValue * sl_weak_atr_multiplier)
-                sl_style_short := line.style_dotted
-                sl_width_short := 1 // Explicitly set width for weak
-                tp_style_short := line.style_dotted
-                tp_width_short := 1 // Explicitly set width for weak
+            sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier) // Default ATR SL for calculation base
         else
             sl_short := entry_price_short + (fixed_sl_pips * syminfo.mintick)
+
+        // Determine SL price AND Style/Width based on strength, AFTER SL price is initially determined by ATR/Fixed
+        if bearishOBStrength == "Strong"
+            if use_atr_for_sl
+                sl_short := entry_price_short + (atrValue * sl_strong_atr_multiplier)
+            sl_style_short := line.style_solid
+            sl_width_short := 2
+            tp_style_short := line.style_solid
+            tp_width_short := 2
+        else if bearishOBStrength == "Moderate"
+            if use_atr_for_sl
+                sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier)
+            sl_style_short := line.style_dashed
+            sl_width_short := 1
+            tp_style_short := line.style_dashed
+            tp_width_short := 1
+        else // Weak
+            if use_atr_for_sl
+                sl_short := entry_price_short + (atrValue * sl_weak_atr_multiplier)
+            sl_style_short := line.style_dotted
+            sl_width_short := 1
+            tp_style_short := line.style_dotted
+            tp_width_short := 1
 
         // Calculate TP
         risk_amount_short = sl_short - entry_price_short
@@ -411,13 +432,16 @@ if showSLTPLevels and not na(activeBearishSL) and not na(activeBearishTP) and no
 // Alert Conditions for TradingView UI
 // These allow users to create custom alerts within TradingView based on these indicator events.
 // New OB alerts trigger if OBs or SL/TP levels are shown (implying user interest).
-alertcondition(newBullishOBDetectedThisBar and (showOrderBlocks or showSLTPLevels), title="New Bullish OB Entry", message="New Long Entry on {{ticker}} | Strength: " + bullishOBStrength)
-alertcondition(newBearishOBDetectedThisBar and (showOrderBlocks or showSLTPLevels), title="New Bearish OB Entry", message="New Short Entry on {{ticker}} | Strength: " + bearishOBStrength)
+// Message argument must be a 'const string'. Dynamic details like signal strength or exact SL/TP levels
+// cannot be included directly in 'alertcondition' messages if they come from series variables.
+alertcondition(newBullishOBDetectedThisBar and (showOrderBlocks or showSLTPLevels), title="New Bullish OB Entry", message="New Long Entry detected on {{ticker}} at {{interval}}. Check chart for signal strength.")
+alertcondition(newBearishOBDetectedThisBar and (showOrderBlocks or showSLTPLevels), title="New Bearish OB Entry", message="New Short Entry detected on {{ticker}} at {{interval}}. Check chart for signal strength.")
+
 // Proximity alerts trigger only if SL/TP levels are visible.
-alertcondition(long_sl_proximity_condition and showSLTPLevels, title="Long SL Proximity", message="Price approaching Long SL on {{ticker}} (SL: " + str.tostring(activeBullishSL, '#.#####') + ")")
-alertcondition(long_tp_proximity_condition and showSLTPLevels, title="Long TP Proximity", message="Price approaching Long TP on {{ticker}} (TP: " + str.tostring(activeBullishTP, '#.#####') + ")")
-alertcondition(short_sl_proximity_condition and showSLTPLevels, title="Short SL Proximity", message="Price approaching Short SL on {{ticker}} (SL: " + str.tostring(activeBearishSL, '#.#####') + ")")
-alertcondition(short_tp_proximity_condition and showSLTPLevels, title="Short TP Proximity", message="Price approaching Short TP on {{ticker}} (TP: " + str.tostring(activeBearishTP, '#.#####') + ")")
+alertcondition(long_sl_proximity_condition and showSLTPLevels, title="Long SL Proximity", message="Price approaching Long Stop Loss on {{ticker}} at {{interval}}.")
+alertcondition(long_tp_proximity_condition and showSLTPLevels, title="Long TP Proximity", message="Price approaching Long Take Profit on {{ticker}} at {{interval}}.")
+alertcondition(short_sl_proximity_condition and showSLTPLevels, title="Short SL Proximity", message="Price approaching Short Stop Loss on {{ticker}} at {{interval}}.")
+alertcondition(short_tp_proximity_condition and showSLTPLevels, title="Short TP Proximity", message="Price approaching Short Take Profit on {{ticker}} at {{interval}}.")
 
 // Note: The base plot of 'close' price has been removed for cleaner chart visuals, as this indicator focuses on overlays.
 // plot(close, "Close Price", color=color.gray)
