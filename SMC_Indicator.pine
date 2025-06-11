@@ -8,7 +8,7 @@ indicator("SMC Indicator by Default Name", shorttitle="SMC", overlay=true, max_l
 // Market Structure Settings
 grp_ms = "Market Structure Settings"
 lookback = input.int(10, title="Swing Lookback Period", group=grp_ms, tooltip="Number of bars to look back on each side to identify a swing point (high/low). Higher values mean more significant swings.")
-showMarketStructure = input.bool(true, title="Show Market Structure (HH/LL/LH/HL)", group=grp_ms, tooltip="Toggles the display of Higher High (HH), Lower Low (LL), Lower High (LH), and Higher Low (HL) markers on the chart.")
+showMarketStructure = input.bool(false, title="Show Market Structure (HH/LL/LH/HL)", group=grp_ms, tooltip="Toggles the display of Higher High (HH), Lower Low (LL), Lower High (LH), and Higher Low (HL) markers on the chart.")
 
 // Order Block Detection Settings
 grp_ob_detect = "Order Block Detection"
@@ -95,10 +95,10 @@ isHL = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwin
 // Plot Market Structure markers
 // The 'series' argument itself incorporates the showMarketStructure condition.
 // If showMarketStructure is false, the condition for plotting the shape becomes false.
-plotshape(series=isHH and showMarketStructure, title="Higher High", location=location.abovebar, color=color.green, style=shape.triangledown, size=size.small)
-plotshape(series=isLL and showMarketStructure, title="Lower Low", location=location.belowbar, color=color.red, style=shape.triangleup, size=size.small)
-plotshape(series=isLH and showMarketStructure, title="Lower High", location=location.abovebar, color=color.orange, style=shape.triangledown, size=size.small)
-plotshape(series=isHL and showMarketStructure, title="Higher Low", location=location.belowbar, color=color.blue, style=shape.triangleup, size=size.small)
+plotshape(series=isHH and showMarketStructure, title="Higher High", location=location.abovebar, color=color.green, style=shape.triangledown, size=size.tiny)
+plotshape(series=isLL and showMarketStructure, title="Lower Low", location=location.belowbar, color=color.red, style=shape.triangleup, size=size.tiny)
+plotshape(series=isLH and showMarketStructure, title="Lower High", location=location.abovebar, color=color.orange, style=shape.triangledown, size=size.tiny)
+plotshape(series=isHL and showMarketStructure, title="Higher Low", location=location.belowbar, color=color.blue, style=shape.triangleup, size=size.tiny)
 
 // Section: Order Block (OB), SL/TP, and Strength Variables
 // Variables for storing OB details, SL/TP lines, and active levels.
@@ -121,15 +121,15 @@ atrValue = ta.atr(atrPeriod)
 
 // Section: Visual Styling - Colors
 // Defines colors used for plotting various elements.
-strong_ob_bull_color = color.new(color.green, 70)  // Less transparent for strong bullish OB
-moderate_ob_bull_color = color.new(color.green, 80) // Standard transparency
-weak_ob_bull_color = color.new(color.green, 90)    // More transparent for weak bullish OB
-strong_ob_bear_color = color.new(color.red, 70)    // Less transparent for strong bearish OB
-moderate_ob_bear_color = color.new(color.red, 80)   // Standard transparency
-weak_ob_bear_color = color.new(color.red, 90)      // More transparent for weak bearish OB
+strong_ob_bull_color = color.new(color.green, 60)  // More solid for strong bullish OB
+moderate_ob_bull_color = color.new(color.green, 75) // Adjusted transparency for moderate
+weak_ob_bull_color = color.new(color.green, 85)    // Adjusted transparency for weak bullish OB
+strong_ob_bear_color = color.new(color.red, 60)    // More solid for strong bearish OB
+moderate_ob_bear_color = color.new(color.red, 75)   // Adjusted transparency for moderate
+weak_ob_bear_color = color.new(color.red, 85)      // Adjusted transparency for weak bearish OB
 
-fvg_bull_color = color.new(color.blue, 85)         // Color for bullish FVG boxes
-fvg_bear_color = color.new(color.purple, 85)       // Color for bearish FVG boxes
+fvg_bull_color = color.new(color.blue, 92)         // Color for bullish FVG boxes
+fvg_bear_color = color.new(color.purple, 92)       // Color for bearish FVG boxes
 
 sl_long_color = color.new(color.maroon, 0)         // Color for long trade Stop Loss lines (dark red)
 tp_long_color = color.new(color.teal, 0)           // Color for long trade Take Profit lines (dark cyan/teal)
