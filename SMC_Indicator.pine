@@ -123,14 +123,14 @@ if (marketTrend == "Downtrend" or marketTrend == "Neutral") and isHH and not na(
     marketTrend := "Uptrend"                       // Trend flips to Uptrend
     lastConfirmedSwingHighForTrend := lastSwingHigh// This HH is the start of the new uptrend structure
     lastConfirmedSwingLowForTrend := lastSwingLow  // The swing low before this HH is the new HL
-    criticalSwingLowForChOCh := lastSwingLow       // This HL becomes critical for a future Bearish CHoCH
+    criticalSwingLowForChOCh := float(lastSwingLow)       // This HL becomes critical for a future Bearish CHoCH
     criticalSwingHighForChOCh := na                // Reset critical high for bullish CHoCH
 else if marketTrend == "Neutral" and isHH and not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow // First structure is HH after HL from neutral
     isCHoCH_Up := true // Treat first valid structure break from neutral as a CHoCH-like event to establish trend
     marketTrend := "Uptrend"
     lastConfirmedSwingHighForTrend := lastSwingHigh
     lastConfirmedSwingLowForTrend := lastSwingLow
-    criticalSwingLowForChOCh := lastSwingLow
+    criticalSwingLowForChOCh := float(lastSwingLow)
     criticalSwingHighForChOCh := na
 
 
