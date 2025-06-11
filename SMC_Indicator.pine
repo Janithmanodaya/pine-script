@@ -254,8 +254,12 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
 
             // Plot SL/TP lines if enabled
             if showSLTPLevels
-                if bullishSLline != na; line.delete(bullishSLline); bullishSLline := na;
-                if bullishTPline != na; line.delete(bullishTPline); bullishTPline := na;
+                if bullishSLline != na
+                    line.delete(bullishSLline)
+                    bullishSLline := na
+                if bullishTPline != na
+                    line.delete(bullishTPline)
+                    bullishTPline := na
                 bullishSLline := line.new(bar_index[1], sl_long, bar_index, sl_long, extend=extend.right, color=sl_long_color, style=sl_style_long, width=sl_width_long)
                 bullishTPline := line.new(bar_index[1], tp_long, bar_index, tp_long, extend=extend.right, color=tp_long_color, style=tp_style_long, width=tp_width_long)
             activeBullishSL := sl_long // Store active SL/TP levels
@@ -360,8 +364,12 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
 
             // Plot SL/TP lines if enabled
             if showSLTPLevels
-                if bearishSLline != na; line.delete(bearishSLline); bearishSLline := na;
-                if bearishTPline != na; line.delete(bearishTPline); bearishTPline := na;
+                if bearishSLline != na
+                    line.delete(bearishSLline)
+                    bearishSLline := na
+                if bearishTPline != na
+                    line.delete(bearishTPline)
+                    bearishTPline := na
                 bearishSLline := line.new(bar_index[1], sl_short, bar_index, sl_short, extend=extend.right, color=sl_short_color, style=sl_style_short, width=sl_width_short)
                 bearishTPline := line.new(bar_index[1], tp_short, bar_index, tp_short, extend=extend.right, color=tp_short_color, style=tp_style_short, width=tp_width_short)
             activeBearishSL := sl_short // Store active SL/TP
