@@ -1,0 +1,348 @@
+//@version=5
+indicator("SMC Indicator by Default Name", shorttitle="SMC", overlay=true)
+
+// --- Inputs ---
+
+// Market Structure Settings
+grp_ms = "Market Structure Settings"
+lookback = input.int(10, title="Swing Lookback Period", group=grp_ms, tooltip="Number of bars to look back to identify swing points (highs/lows).")
+showMarketStructure = input.bool(true, title="Show Market Structure (HH/LL/LH/HL)", group=grp_ms)
+
+// Order Block Detection Settings
+grp_ob_detect = "Order Block Detection"
+minOBSizeATR = input.float(0.3, title="Min OB Size (ATR Multiplier)", group=grp_ob_detect, tooltip="Minimum size of an order block candle (high-low) relative to ATR to be considered valid.")
+showOrderBlocks = input.bool(true, title="Show Order Blocks", group=grp_ob_detect)
+
+// Fair Value Gap (FVG) Settings
+grp_fvg = "Fair Value Gap (FVG) Settings"
+showFVGs = input.bool(true, title="Show Fair Value Gaps (FVGs)", group=grp_fvg)
+
+// Signal Strength Settings
+grp_ss = "Signal Strength Settings"
+volLookback = input.int(10, title="Volume Lookback for SMA", group=grp_ss, tooltip="Lookback period for calculating the Simple Moving Average of volume.")
+atrPeriod = input.int(14, title="ATR Period for OB Size/SL", group=grp_ss, tooltip="ATR lookback period used for Order Block size evaluation and ATR-based Stop Loss calculation.")
+volumeMinMultiplierStrong = input.float(1.5, title="Min Volume Multiplier for Strong OB", group=grp_ss, tooltip="Volume on the OB candle must be at least this many times the SMA volume to be considered for a 'Strong' OB. Default: 1.5x")
+volumeMinMultiplierNormal = input.float(0.75, title="Min Volume Multiplier for Normal OB", group=grp_ss, tooltip="Volume on the OB candle must be at least this many times the SMA volume to avoid being 'Weak' (if not Strong). Default: 0.75x")
+obSizeMaxMultiplierSmall = input.float(0.5, title="Max OB Size for Small OB (ATR x)", group=grp_ss, tooltip="If OB size (high-low) is less than ATR * this multiplier, it's considered 'Small'. Default: 0.5x ATR")
+obSizeMinMultiplierLarge = input.float(1.0, title="Min OB Size for Large OB (ATR x)", group=grp_ss, tooltip="If OB size (high-low) is greater than ATR * this multiplier, it's considered 'Large'. Default: 1.0x ATR")
+
+// SL/TP Settings
+grp_sltp = "SL/TP Settings"
+use_atr_for_sl = input.bool(true, title="Use ATR for SL Placement", group=grp_sltp, tooltip="If checked, SL is based on ATR. Otherwise, a fixed pip value is used.")
+fixed_sl_pips = input.int(20, title="Fixed SL Pips (if not ATR)", group=grp_sltp, tooltip="Fixed Stop Loss in pips if ATR-based SL is not used.")
+showSLTPLevels = input.bool(true, title="Show SL/TP Levels", group=grp_sltp)
+
+grp_sltp_strong = "SL/TP Settings - Strong Signal"
+sl_strong_atr_multiplier = input.float(1.0, title="Strong SL ATR Multiplier", group=grp_sltp_strong, tooltip="ATR multiplier for Stop Loss on Strong signals.")
+tp_strong_rr = input.float(3.0, title="Strong TP R/R Ratio", group=grp_sltp_strong, tooltip="Take Profit Risk/Reward ratio for Strong signals.")
+
+grp_sltp_mod = "SL/TP Settings - Moderate Signal"
+sl_moderate_atr_multiplier = input.float(1.5, title="Moderate SL ATR Multiplier", group=grp_sltp_mod, tooltip="ATR multiplier for Stop Loss on Moderate signals.")
+tp_moderate_rr = input.float(2.0, title="Moderate TP R/R Ratio", group=grp_sltp_mod, tooltip="Take Profit Risk/Reward ratio for Moderate signals.")
+
+grp_sltp_weak = "SL/TP Settings - Weak Signal"
+sl_weak_atr_multiplier = input.float(2.0, title="Weak SL ATR Multiplier", group=grp_sltp_weak, tooltip="ATR multiplier for Stop Loss on Weak signals.")
+tp_weak_rr = input.float(1.5, title="Weak TP R/R Ratio", group=grp_sltp_weak, tooltip="Take Profit Risk/Reward ratio for Weak signals.")
+
+// Alert Settings
+grp_alerts = "Alert Settings"
+proximity_atr_multiplier = input.float(0.25, title="SL/TP Proximity ATR Multiplier", group=grp_alerts, tooltip="ATR multiplier to define the proximity zone for SL/TP alerts. E.g., 0.25 means alert if price is within 0.25 * ATR of SL/TP.")
+
+// --- End Inputs ---
+
+// Identify Swing Highs and Lows
+swingHigh = ta.pivothigh(high, lookback, lookback)
+swingLow = ta.pivotlow(low, lookback, lookback)
+
+// Store Swing Points
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var float prevSwingHigh = na
+var float prevSwingLow = na
+
+if not na(swingHigh)
+    prevSwingHigh := lastSwingHigh
+    lastSwingHigh := swingHigh
+
+if not na(swingLow)
+    prevSwingLow := lastSwingLow
+    lastSwingLow := swingLow
+
+// Classify HH, LL, LH, HL
+isHH = not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh > prevSwingHigh
+isLL = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow < prevSwingLow
+isLH = not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh < prevSwingHigh
+isHL = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow
+
+// Plot Market Structure
+if showMarketStructure
+    plotshape(isHH, title="Higher High", location=location.abovebar, color=color.green, style=shape.triangledown, size=size.small)
+    plotshape(isLL, title="Lower Low", location=location.belowbar, color=color.red, style=shape.triangleup, size=size.small)
+    plotshape(isLH, title="Lower High", location=location.abovebar, color=color.orange, style=shape.triangledown, size=size.small)
+    plotshape(isHL, title="Higher Low", location=location.belowbar, color=color.blue, style=shape.triangleup, size=size.small)
+
+// Order Block Logic
+var box bullishOrderBlock = na
+var box bearishOrderBlock = na
+var string bullishOBStrength = ""
+var string bearishOBStrength = ""
+var line bullishSLline = na
+var line bullishTPline = na
+var float activeBullishSL = na
+var float activeBullishTP = na
+var line bearishSLline = na
+var line bearishTPline = na
+var float activeBearishSL = na
+var float activeBearishTP = na
+
+// Initialize SMA and ATR here after inputs have been defined
+smaVolume = ta.sma(volume, volLookback)
+atrValue = ta.atr(atrPeriod)
+
+// Colors for plotting
+strong_ob_bull_color = color.new(color.green, 70)
+moderate_ob_bull_color = color.new(color.green, 80)
+weak_ob_bull_color = color.new(color.green, 90)
+strong_ob_bear_color = color.new(color.red, 70)
+moderate_ob_bear_color = color.new(color.red, 80)
+weak_ob_bear_color = color.new(color.red, 90)
+
+fvg_bull_color = color.new(color.blue, 85)
+fvg_bear_color = color.new(color.purple, 85)
+
+sl_long_color = color.new(color.maroon, 0)
+tp_long_color = color.new(color.teal, 0)
+sl_short_color = color.new(color.maroon, 0)
+tp_short_color = color.new(color.teal, 0)
+
+// Fair Value Gap (FVG) Detection
+bullishFVG_top = high[2]
+bullishFVG_bottom = low
+isBullishFVG = low > high[2] and close[1] > open[1] and close > open
+
+bearishFVG_top = high
+bearishFVG_bottom = low[2]
+isBearishFVG = high < low[2] and close[1] < open[1] and close < open
+
+// Plot FVGs
+if showFVGs
+    if isBullishFVG
+        box.new(bar_index[2], bullishFVG_top, bar_index, bullishFVG_bottom, border_color=na, bgcolor=fvg_bull_color, extend=extend.right)
+
+    if isBearishFVG
+        box.new(bar_index[2], bearishFVG_top, bar_index, bearishFVG_bottom, border_color=na, bgcolor=fvg_bear_color, extend=extend.right)
+
+// --- Bullish OB Identification & Plotting ---
+var bool newBullishOBDetectedThisBar = false
+newBullishOBDetectedThisBar := false
+
+if isHH and not na(prevSwingLow) and close[1] < open[1] // Potential Bullish OB
+    bullishOB_low = low[1]
+    bullishOB_high = high[1]
+    bullishOB_size = bullishOB_high - bullishOB_low
+    isValidOBMinSize = bullishOB_size >= atrValue * minOBSizeATR
+
+    obVolume = volume[1]
+    isHighVolumeBullish = obVolume > smaVolume * volumeMinMultiplierStrong
+    isLowVolumeBullish = obVolume < smaVolume * volumeMinMultiplierNormal
+
+    isLargeOBBullish = bullishOB_size > atrValue * obSizeMinMultiplierLarge
+    isSmallOBBullish = bullishOB_size < atrValue * obSizeMaxMultiplierSmall
+
+    if isHighVolumeBullish and isLargeOBBullish
+        bullishOBStrength := "Strong"
+    else if isLowVolumeBullish or isSmallOBBullish
+        bullishOBStrength := "Weak"
+    else
+        bullishOBStrength := "Moderate"
+
+    if isValidOBMinSize and (na(bullishOrderBlock) or bullishOB_low != box.get_bottom(bullishOrderBlock))
+        if not na(bullishOrderBlock)
+            box.delete(bullishOrderBlock)
+            if bullishSLline != na
+                line.delete(bullishSLline)
+                bullishSLline := na
+            if bullishTPline != na
+                line.delete(bullishTPline)
+                bullishTPline := na
+            activeBullishSL := na
+            activeBullishTP := na
+
+        currentBullishOBColor = bullishOBStrength == "Strong" ? strong_ob_bull_color : bullishOBStrength == "Moderate" ? moderate_ob_bull_color : weak_ob_bull_color
+
+        if showOrderBlocks
+            bullishOrderBlock := box.new(bar_index[1], bullishOB_high, bar_index, bullishOB_low, border_color=na, bgcolor=currentBullishOBColor)
+
+        newBullishOBDetectedThisBar := true
+
+        entry_price_long = bullishOB_high
+        sl_long = 0.0
+        tp_long = 0.0
+        sl_style_long = line.style_dashed
+        sl_width_long = 1
+        tp_style_long = line.style_dashed
+        tp_width_long = 1
+
+        if use_atr_for_sl
+            if bullishOBStrength == "Strong"
+                sl_long := entry_price_long - (atrValue * sl_strong_atr_multiplier)
+                sl_style_long := line.style_solid
+                sl_width_long := 2
+                tp_style_long := line.style_solid
+                tp_width_long := 2
+            else if bullishOBStrength == "Moderate"
+                sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier)
+            else // Weak
+                sl_long := entry_price_long - (atrValue * sl_weak_atr_multiplier)
+                sl_style_long := line.style_dotted
+                tp_style_long := line.style_dotted
+        else
+            sl_long := entry_price_long - (fixed_sl_pips * syminfo.mintick)
+
+        risk_amount_long = entry_price_long - sl_long
+        if risk_amount_long > 0
+            if bullishOBStrength == "Strong"
+                tp_long := entry_price_long + (risk_amount_long * tp_strong_rr)
+            else if bullishOBStrength == "Moderate"
+                tp_long := entry_price_long + (risk_amount_long * tp_moderate_rr)
+            else // Weak
+                tp_long := entry_price_long + (risk_amount_long * tp_weak_rr)
+
+            if showSLTPLevels
+                if bullishSLline != na
+                    line.delete(bullishSLline)
+                    bullishSLline := na
+                if bullishTPline != na
+                    line.delete(bullishTPline)
+                    bullishTPline := na
+                bullishSLline := line.new(bar_index[1], sl_long, bar_index, sl_long, extend=extend.right, color=sl_long_color, style=sl_style_long, width=sl_width_long)
+                bullishTPline := line.new(bar_index[1], tp_long, bar_index, tp_long, extend=extend.right, color=tp_long_color, style=tp_style_long, width=tp_width_long)
+            activeBullishSL := sl_long
+            activeBullishTP := tp_long
+    else if not isValidOBMinSize
+        newBullishOBDetectedThisBar := false
+
+// --- Bearish OB Identification & Plotting ---
+var bool newBearishOBDetectedThisBar = false
+newBearishOBDetectedThisBar := false
+
+if isLL and not na(prevSwingHigh) and close[1] > open[1] // Potential Bearish OB
+    bearishOB_low = low[1]
+    bearishOB_high = high[1]
+    bearishOB_size = bearishOB_high - bearishOB_low
+    isValidOBMinSizeBearish = bearishOB_size >= atrValue * minOBSizeATR
+
+    obVolume = volume[1]
+    isHighVolumeBearish = obVolume > smaVolume * volumeMinMultiplierStrong
+    isLowVolumeBearish = obVolume < smaVolume * volumeMinMultiplierNormal
+
+    isLargeOBBearish = bearishOB_size > atrValue * obSizeMinMultiplierLarge
+    isSmallOBBearish = bearishOB_size < atrValue * obSizeMaxMultiplierSmall
+
+    if isHighVolumeBearish and isLargeOBBearish
+        bearishOBStrength := "Strong"
+    else if isLowVolumeBearish or isSmallOBBearish
+        bearishOBStrength := "Weak"
+    else
+        bearishOBStrength := "Moderate"
+
+    if isValidOBMinSizeBearish and (na(bearishOrderBlock) or bearishOB_high != box.get_top(bearishOrderBlock))
+        if not na(bearishOrderBlock)
+            box.delete(bearishOrderBlock)
+            if bearishSLline != na
+                line.delete(bearishSLline)
+                bearishSLline := na
+            if bearishTPline != na
+                line.delete(bearishTPline)
+                bearishTPline := na
+            activeBearishSL := na
+            activeBearishTP := na
+
+        currentBearishOBColor = bearishOBStrength == "Strong" ? strong_ob_bear_color : bearishOBStrength == "Moderate" ? moderate_ob_bear_color : weak_ob_bear_color
+
+        if showOrderBlocks
+            bearishOrderBlock := box.new(bar_index[1], bearishOB_high, bar_index, bearishOB_low, border_color=na, bgcolor=currentBearishOBColor)
+
+        newBearishOBDetectedThisBar := true
+
+        entry_price_short = bearishOB_low
+        sl_short = 0.0
+        tp_short = 0.0
+        sl_style_short = line.style_dashed
+        sl_width_short = 1
+        tp_style_short = line.style_dashed
+        tp_width_short = 1
+
+        if use_atr_for_sl
+            if bearishOBStrength == "Strong"
+                sl_short := entry_price_short + (atrValue * sl_strong_atr_multiplier)
+                sl_style_short := line.style_solid
+                sl_width_short := 2
+                tp_style_short := line.style_solid
+                tp_width_short := 2
+            else if bearishOBStrength == "Moderate"
+                sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier)
+            else // Weak
+                sl_short := entry_price_short + (atrValue * sl_weak_atr_multiplier)
+                sl_style_short := line.style_dotted
+                tp_style_short := line.style_dotted
+        else
+            sl_short := entry_price_short + (fixed_sl_pips * syminfo.mintick)
+
+        risk_amount_short = sl_short - entry_price_short
+        if risk_amount_short > 0
+            if bearishOBStrength == "Strong"
+                tp_short := entry_price_short - (risk_amount_short * tp_strong_rr)
+            else if bearishOBStrength == "Moderate"
+                tp_short := entry_price_short - (risk_amount_short * tp_moderate_rr)
+            else // Weak
+                tp_short := entry_price_short - (risk_amount_short * tp_weak_rr)
+
+            if showSLTPLevels
+                if bearishSLline != na
+                    line.delete(bearishSLline)
+                    bearishSLline := na
+                if bearishTPline != na
+                    line.delete(bearishTPline)
+                    bearishTPline := na
+                bearishSLline := line.new(bar_index[1], sl_short, bar_index, sl_short, extend=extend.right, color=sl_short_color, style=sl_style_short, width=sl_width_short)
+                bearishTPline := line.new(bar_index[1], tp_short, bar_index, tp_short, extend=extend.right, color=tp_short_color, style=tp_style_short, width=tp_width_short)
+            activeBearishSL := sl_short
+            activeBearishTP := tp_short
+    else if not isValidOBMinSizeBearish
+        newBearishOBDetectedThisBar := false
+
+// Reset flags if the primary conditions for OB are not met (independent of isValidOBMinSize or showOrderBlocks for alert logic)
+if not (isHH and not na(prevSwingLow) and close[1] < open[1])
+    newBullishOBDetectedThisBar := false
+if not (isLL and not na(prevSwingHigh) and close[1] > open[1])
+    newBearishOBDetectedThisBar := false
+
+// Proximity Alert Logic
+proximity = atrValue * proximity_atr_multiplier
+long_sl_proximity_condition = false
+long_tp_proximity_condition = false
+short_sl_proximity_condition = false
+short_tp_proximity_condition = false
+
+if showSLTPLevels and not na(activeBullishSL) and not na(activeBullishTP) and not newBullishOBDetectedThisBar
+    if close <= activeBullishSL + proximity and close > activeBullishSL
+        long_sl_proximity_condition := true
+    if close >= activeBullishTP - proximity and close < activeBullishTP
+        long_tp_proximity_condition := true
+
+if showSLTPLevels and not na(activeBearishSL) and not na(activeBearishTP) and not newBearishOBDetectedThisBar
+    if close >= activeBearishSL - proximity and close < activeBearishSL
+        short_sl_proximity_condition := true
+    if close <= activeBearishTP + proximity and close > activeBearishTP
+        short_tp_proximity_condition := true
+
+// Alert Conditions for TradingView UI
+alertcondition(newBullishOBDetectedThisBar and (showOrderBlocks or showSLTPLevels), title="New Bullish OB Entry", message="New Long Entry on {{ticker}} | Strength: " + bullishOBStrength)
+alertcondition(newBearishOBDetectedThisBar and (showOrderBlocks or showSLTPLevels), title="New Bearish OB Entry", message="New Short Entry on {{ticker}} | Strength: " + bearishOBStrength)
+alertcondition(long_sl_proximity_condition and showSLTPLevels, title="Long SL Proximity", message="Price approaching Long SL on {{ticker}} (SL: " + str.tostring(activeBullishSL, '#.#####') + ")")
+alertcondition(long_tp_proximity_condition and showSLTPLevels, title="Long TP Proximity", message="Price approaching Long TP on {{ticker}} (TP: " + str.tostring(activeBullishTP, '#.#####') + ")")
+alertcondition(short_sl_proximity_condition and showSLTPLevels, title="Short SL Proximity", message="Price approaching Short SL on {{ticker}} (SL: " + str.tostring(activeBearishSL, '#.#####') + ")")
+alertcondition(short_tp_proximity_condition and showSLTPLevels, title="Short TP Proximity", message="Price approaching Short TP on {{ticker}} (TP: " + str.tostring(activeBearishTP, '#.#####') + ")")
+
+// plot(close, "Close Price", color=color.gray) // Base plot removed for clarity
