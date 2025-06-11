@@ -8,7 +8,7 @@ indicator("SMC Indicator by Default Name", shorttitle="SMC", overlay=true, max_l
 // Market Structure Settings
 grp_ms = "Market Structure Settings"
 lookback = input.int(10, title="Swing Lookback Period", group=grp_ms, tooltip="Number of bars to look back on each side to identify a swing point (high/low). Higher values mean more significant swings.")
-showMarketStructure = input.bool(false, title="Show Market Structure (HH/LL/LH/HL)", group=grp_ms, tooltip="Toggles the display of Higher High (HH), Lower Low (LL), Lower High (LH), and Higher Low (HL) markers on the chart.")
+showMarketStructure = input.bool(true, title="Show Market Structure (HH/LL/LH/HL)", group=grp_ms, tooltip="Toggles the display of Higher High (HH), Lower Low (LL), Lower High (LH), and Higher Low (HL) markers on the chart.")
 
 // Order Block Detection Settings
 grp_ob_detect = "Order Block Detection"
@@ -71,6 +71,11 @@ var float lastSwingHigh = na
 var float lastSwingLow = na
 var float prevSwingHigh = na // Previous swing high before the last one
 var float prevSwingLow = na  // Previous swing low before the last one
+var string marketTrend = "Neutral" // Possible states: "Neutral", "Uptrend", "Downtrend"
+var float lastConfirmedSwingHighForTrend = na // Store the HH that confirmed uptrend / BOS high
+var float lastConfirmedSwingLowForTrend = na  // Store the LL that confirmed downtrend / BOS low
+var float criticalSwingHighForChOCh = na     // Last significant LH in a downtrend to watch for Bullish CHoCH
+var float criticalSwingLowForChOCh = na      // Last significant HL in an uptrend to watch for Bearish CHoCH
 
 // Update swing point history when a new swing high is detected.
 if not na(swingHigh)
@@ -92,13 +97,114 @@ isLH = not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh < prevS
 // A Higher Low (HL) is formed if the latest swing low is higher than the previous swing low.
 isHL = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow
 
-// Plot Market Structure markers
-// The 'series' argument itself incorporates the showMarketStructure condition.
-// If showMarketStructure is false, the condition for plotting the shape becomes false.
-plotshape(series=isHH and showMarketStructure, title="Higher High", location=location.abovebar, color=color.green, style=shape.triangledown, size=size.tiny)
-plotshape(series=isLL and showMarketStructure, title="Lower Low", location=location.belowbar, color=color.red, style=shape.triangleup, size=size.tiny)
-plotshape(series=isLH and showMarketStructure, title="Lower High", location=location.abovebar, color=color.orange, style=shape.triangledown, size=size.tiny)
-plotshape(series=isHL and showMarketStructure, title="Higher Low", location=location.belowbar, color=color.blue, style=shape.triangleup, size=size.tiny)
+// Section: Market Trend State Definition & CHoCH & BOS
+bool isBOS_Up = false      // Initialize BOS flags for the current bar
+bool isBOS_Down = false
+bool isCHoCH_Up = false    // Initialize CHoCH flags for the current bar
+bool isCHoCH_Down = false
+
+// Note: The old "1. Initial Trend Setting & Critical Point Updates" block is removed.
+// marketTrend starts as "Neutral" and is primarily changed by CHoCH.
+// Critical points for CHoCH are now set when a trend is established by CHoCH or confirmed by BOS.
+
+// 2. Change of Character (CHoCH) Detection - This can flip the marketTrend
+// Bearish CHoCH: Current trend is Uptrend (or Neutral, allowing first CHoCH), and price makes a Lower Low breaking the last critical Higher Low.
+if marketTrend == "Uptrend" and isLL and not na(criticalSwingLowForChOCh) and lastSwingLow < criticalSwingLowForChOCh
+    isCHoCH_Down := true
+    marketTrend := "Downtrend"                     // Trend flips to Downtrend
+    lastConfirmedSwingLowForTrend := lastSwingLow  // This LL is the start of the new downtrend structure
+    lastConfirmedSwingHighForTrend := lastSwingHigh// The swing high before this LL is the new LH
+    criticalSwingHighForChOCh := lastSwingHigh     // This LH becomes critical for a future Bullish CHoCH
+    criticalSwingLowForChOCh := na                 // Reset critical low for bearish CHoCH
+
+// Bullish CHoCH: Current trend is Downtrend (or Neutral), and price makes a Higher High breaking the last critical Lower High.
+if (marketTrend == "Downtrend" or marketTrend == "Neutral") and isHH and not na(criticalSwingHighForChOCh) and lastSwingHigh > criticalSwingHighForChOCh
+    isCHoCH_Up := true
+    marketTrend := "Uptrend"                       // Trend flips to Uptrend
+    lastConfirmedSwingHighForTrend := lastSwingHigh// This HH is the start of the new uptrend structure
+    lastConfirmedSwingLowForTrend := lastSwingLow  // The swing low before this HH is the new HL
+    criticalSwingLowForChOCh := lastSwingLow       // This HL becomes critical for a future Bearish CHoCH
+    criticalSwingHighForChOCh := na                // Reset critical high for bullish CHoCH
+else if marketTrend == "Neutral" and isHH and not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow // First structure is HH after HL from neutral
+    isCHoCH_Up := true // Treat first valid structure break from neutral as a CHoCH-like event to establish trend
+    marketTrend := "Uptrend"
+    lastConfirmedSwingHighForTrend := lastSwingHigh
+    lastConfirmedSwingLowForTrend := lastSwingLow
+    criticalSwingLowForChOCh := lastSwingLow
+    criticalSwingHighForChOCh := na
+
+
+// 3. Break of Structure (BOS) Detection - Confirms the current (potentially CHoCH'd) trend
+// Check for Bullish BOS: New HH breaks the last high that confirmed/started the uptrend.
+if marketTrend == "Uptrend" and isHH and not isCHoCH_Up // Ensure it's not the CHoCH bar itself
+    if not na(lastConfirmedSwingHighForTrend) and lastSwingHigh > lastConfirmedSwingHighForTrend
+        isBOS_Up := true
+        lastConfirmedSwingHighForTrend := lastSwingHigh // Update the confirmation high to this new BOS high
+        if not na(lastSwingLow)
+            criticalSwingLowForChOCh := lastSwingLow   // The HL before BOS is now the critical low
+    else if na(lastConfirmedSwingHighForTrend) // If uptrend is set but no HH confirmed it yet (e.g. first leg after CHoCH)
+        lastConfirmedSwingHighForTrend := lastSwingHigh // This HH now confirms it
+        if not na(lastSwingLow)
+             criticalSwingLowForChOCh := lastSwingLow
+
+
+// Check for Bearish BOS: New LL breaks the last low that confirmed/started the downtrend.
+if marketTrend == "Downtrend" and isLL and not isCHoCH_Down // Ensure it's not the CHoCH bar itself
+    if not na(lastConfirmedSwingLowForTrend) and lastSwingLow < lastConfirmedSwingLowForTrend
+        isBOS_Down := true
+        lastConfirmedSwingLowForTrend := lastSwingLow // Update the confirmation low to this new BOS low
+        if not na(lastSwingHigh)
+            criticalSwingHighForChOCh := lastSwingHigh // The LH before BOS is now the critical high
+    else if na(lastConfirmedSwingLowForTrend) // If downtrend is set but no LL confirmed it yet
+        lastConfirmedSwingLowForTrend := lastSwingLow // This LL now confirms it
+        if not na(lastSwingHigh)
+            criticalSwingHighForChOCh := lastSwingHigh
+
+
+// Plot BOS and CHoCH markers if showMarketStructure is true
+// BOS Up: Plotted at the HH that caused the BOS
+plotshape(series=isBOS_Up and showMarketStructure,
+          title="Bullish BOS",
+          text="BOS",
+          location=location.abovebar,
+          color=color.new(color.green, 0),
+          style=shape.labeldown,
+          textcolor=color.white,
+          size=size.tiny,
+          textalign=text.align_center)
+
+// BOS Down: Plotted at the LL that caused the BOS
+plotshape(series=isBOS_Down and showMarketStructure,
+          title="Bearish BOS",
+          text="BOS",
+          location=location.belowbar,
+          color=color.new(color.red, 0),
+          style=shape.labelup,
+          textcolor=color.white,
+          size=size.tiny,
+          textalign=text.align_center)
+
+// CHoCH Up: Plotted at the HH that caused the Bullish CHoCH
+plotshape(series=isCHoCH_Up and showMarketStructure,
+          title="Bullish CHoCH",
+          text="CHoCH",
+          location=location.abovebar,
+          color=color.new(color.blue, 0),
+          style=shape.labeldown,
+          textcolor=color.white,
+          size=size.tiny,
+          textalign=text.align_center)
+
+// CHoCH Down: Plotted at the LL that caused the Bearish CHoCH
+plotshape(series=isCHoCH_Down and showMarketStructure,
+          title="Bearish CHoCH",
+          text="CHoCH",
+          location=location.belowbar,
+          color=color.new(color.orange, 0),
+          style=shape.labelup,
+          textcolor=color.white,
+          size=size.tiny,
+          textalign=text.align_center)
 
 // Section: Order Block (OB), SL/TP, and Strength Variables
 // Variables for storing OB details, SL/TP lines, and active levels.
