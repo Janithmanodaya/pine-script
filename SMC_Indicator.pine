@@ -206,55 +206,35 @@ bool isCHoCH_Down = false
 // Bearish CHoCH: Current trend is Uptrend (or Neutral, allowing first CHoCH), and price makes a Lower Low breaking the last critical Higher Low.
 if marketTrend == "Uptrend" and isLL and not na(criticalSwingLowForChOCh) and lastSwingLow < criticalSwingLowForChOCh
     isCHoCH_Down := true
-    string newMarketTrend_BearCH = "Downtrend"
-    marketTrend := newMarketTrend_BearCH
-    float newLCSLFT_BearCH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_BearCH
-    float newLCSHFT_BearCH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_BearCH
-    float newCSHFCH_BearCH = lastSwingHigh
-    criticalSwingHighForChOCh := newCSHFCH_BearCH
-    float newCSLFCH_BearCH = na
-    criticalSwingLowForChOCh := newCSLFCH_BearCH
+    marketTrend := "Downtrend"
+    lastConfirmedSwingLowForTrend := lastSwingLow
+    lastConfirmedSwingHighForTrend := lastSwingHigh
+    criticalSwingHighForChOCh := lastSwingHigh
+    criticalSwingLowForChOCh := na
 else if marketTrend == "Neutral" and isLL and not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh < prevSwingHigh // First structure is LL after LH from neutral
     isCHoCH_Down := true
-    string newMarketTrend_NeutralLL_CH = "Downtrend"
-    marketTrend := newMarketTrend_NeutralLL_CH
-    float newLCSLFT_NeutralLL_CH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_NeutralLL_CH
-    float newLCSHFT_NeutralLL_CH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_NeutralLL_CH
-    float newCSHFCH_NeutralLL_CH = lastSwingHigh
-    criticalSwingHighForChOCh := newCSHFCH_NeutralLL_CH
-    float newCSLFCH_NeutralLL_CH = na
-    criticalSwingLowForChOCh := newCSLFCH_NeutralLL_CH
+    marketTrend := "Downtrend"
+    lastConfirmedSwingLowForTrend := lastSwingLow
+    lastConfirmedSwingHighForTrend := lastSwingHigh
+    criticalSwingHighForChOCh := lastSwingHigh
+    criticalSwingLowForChOCh := na
 
 
 // Bullish CHoCH: Current trend is Downtrend (or Neutral), and price makes a Higher High breaking the last critical Lower High.
 if (marketTrend == "Downtrend" or marketTrend == "Neutral") and isHH and not na(criticalSwingHighForChOCh) and lastSwingHigh > criticalSwingHighForChOCh
     isCHoCH_Up := true
-    string newMarketTrend_BullCH = "Uptrend"
-    marketTrend := newMarketTrend_BullCH
-    float newLCSHFT_BullCH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_BullCH
-    float newLCSLFT_BullCH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_BullCH
-    float newCSLFCH_BullCH = lastSwingLow  // Removed float() cast
-    criticalSwingLowForChOCh := newCSLFCH_BullCH
-    float newCSHFCH_BullCH = na
-    criticalSwingHighForChOCh := newCSHFCH_BullCH
+    marketTrend := "Uptrend"
+    lastConfirmedSwingHighForTrend := lastSwingHigh
+    lastConfirmedSwingLowForTrend := lastSwingLow
+    criticalSwingLowForChOCh := lastSwingLow
+    criticalSwingHighForChOCh := na
 else if marketTrend == "Neutral" and isHH and not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow // First structure is HH after HL from neutral
     isCHoCH_Up := true
-    string newMarketTrend_NeutralHH_CH = "Uptrend"
-    marketTrend := newMarketTrend_NeutralHH_CH
-    float newLCSHFT_NeutralHH_CH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_NeutralHH_CH
-    float newLCSLFT_NeutralHH_CH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_NeutralHH_CH
-    float newCSLFCH_NeutralHH_CH = lastSwingLow // Removed float() cast
-    criticalSwingLowForChOCh := newCSLFCH_NeutralHH_CH
-    float newCSHFCH_NeutralHH_CH = na
-    criticalSwingHighForChOCh := newCSHFCH_NeutralHH_CH
+    marketTrend := "Uptrend"
+    lastConfirmedSwingHighForTrend := lastSwingHigh
+    lastConfirmedSwingLowForTrend := lastSwingLow
+    criticalSwingLowForChOCh := lastSwingLow
+    criticalSwingHighForChOCh := na
 
 
 // 3. Break of Structure (BOS) Detection - Confirms the current (potentially CHoCH'd) trend
