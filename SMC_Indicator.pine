@@ -52,7 +52,7 @@ tp_weak_rr = input.float(1.5, title="Weak TP R/R Ratio", group=grp_sltp_weak, to
 
 // Alert Settings
 grp_alerts = "Alert Settings"
-proximity_atr_multiplier = input.float(0.25, title="SL/TP Proximity ATR Multiplier", group=grp_alerts, tooltip="ATR multiplier to define how close price needs to be to SL/TP levels to trigger a proximity alert. Example: 0.25 means alert if price is within 0.25 * ATR of SL/TP.")
+proximity_atr_multiplier = input.float(0.25, title="SL/TP Proximity ATR Multiplier", group=grp_alerts, tooltip="Proximity alert multiplier.")
 
 // --- End Inputs ---
 
@@ -195,7 +195,7 @@ isHL = not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwin
 // Section: Market Trend State Definition & CHoCH & BOS
 bool isBOS_Up = false      // Initialize BOS flags for the current bar
 bool isBOS_Down = false
-bool isCHoCH_Up = false    // Initialize CHoCH flags for the current bar
+bool isCHoCH_Up = false
 bool isCHoCH_Down = false
 
 // Note: The old "1. Initial Trend Setting & Critical Point Updates" block is removed.
@@ -235,7 +235,6 @@ else if marketTrend == "Neutral" and isHH and not na(lastSwingLow) and not na(pr
     lastConfirmedSwingLowForTrend := lastSwingLow
     criticalSwingLowForChOCh := lastSwingLow
     criticalSwingHighForChOCh := na
-
 
 // 3. Break of Structure (BOS) Detection - Confirms the current (potentially CHoCH'd) trend
 // Check for Bullish BOS: New HH breaks the last high that confirmed/started the uptrend.
