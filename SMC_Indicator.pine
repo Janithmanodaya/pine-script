@@ -18,6 +18,7 @@ showOrderBlocks = input.bool(true, title="Show Order Blocks", group=grp_ob_detec
 // Fair Value Gap (FVG) Settings
 grp_fvg = "Fair Value Gap (FVG) Settings"
 showFVGs = input.bool(true, title="Show Fair Value Gaps (FVGs)", group=grp_fvg, tooltip="Toggles the display of Fair Value Gaps (price imbalances).")
+max_fvg_count = input.int(20, title="Max FVG Boxes to Display", group=grp_fvg, tooltip="Maximum number of Fair Value Gap boxes to keep on the chart. Oldest ones are removed first.", minval=0)
 
 // Signal Strength Settings
 grp_ss = "Signal Strength Settings"
@@ -54,6 +55,100 @@ grp_alerts = "Alert Settings"
 proximity_atr_multiplier = input.float(0.25, title="SL/TP Proximity ATR Multiplier", group=grp_alerts, tooltip="ATR multiplier to define how close price needs to be to SL/TP levels to trigger a proximity alert. Example: 0.25 means alert if price is within 0.25 * ATR of SL/TP.")
 
 // --- End Inputs ---
+
+// --- Helper Functions for Order Block Detection ---
+
+// @function detectOrderBlock: Checks if a valid order block is present based on structural conditions and candle properties.
+// @param isBullish bool: True for bullish OB, false for bearish.
+// @param prevSwingValue float: Previous swing low for bullish, previous swing high for bearish.
+// @param currentSwingValue float: Current swing high for bullish (isHH), current swing low for bearish (isLL).
+// @param isStructureConditionMet bool: True if the required market structure (e.g., HH for bullish) is met.
+// @param obCandleClose float: Close price of the potential OB candle (bar[1]).
+// @param obCandleOpen float: Open price of the potential OB candle (bar[1]).
+// @param obCandleLow float: Low price of the potential OB candle (bar[1]).
+// @param obCandleHigh float: High price of the potential OB candle (bar[1]).
+// @param atrVal float: Current ATR value.
+// @param minOBSizeAtrMult float: User input for minimum OB size as an ATR multiplier.
+// @returns [bool, float, float]: [isOBValid, obLow, obHigh]. isOBValid is true if conditions pass. obLow/obHigh are the low/high of the OB candle.
+detectOrderBlock(bool isBullish, float prevSwingValue, float currentSwingValue, bool isStructureConditionMet, float obCandleClose, float obCandleOpen, float obCandleLow, float obCandleHigh, float atrVal, float minOBSizeAtrMult) =>
+    bool isOBValid = false
+    float obLow = na
+    float obHigh = na
+
+    // Basic conditions: structure met and previous swing exists
+    if isStructureConditionMet and not na(prevSwingValue)
+        bool isCorrectCandleDirection = isBullish ? obCandleClose < obCandleOpen : obCandleClose > obCandleOpen
+        if isCorrectCandleDirection
+            float obSize = obCandleHigh - obCandleLow
+            bool isValidOBMinSize = obSize >= atrVal * minOBSizeAtrMult
+            if isValidOBMinSize
+                isOBValid := true
+                obLow := obCandleLow
+                obHigh := obCandleHigh
+    [isOBValid, obLow, obHigh]
+
+// @function assessOrderBlockStrength: Assesses the strength of a confirmed order block.
+// @param obSize float: Size of the order block (high - low).
+// @param obVolume float: Volume of the OB candle.
+// @param smaVol float: SMA of volume.
+// @param atrVal float: Current ATR value.
+// @param volMinMultStrong float: User input for strong volume multiplier.
+// @param volMinMultNormal float: User input for normal volume multiplier.
+// @param obSizeMaxMultSmall float: User input for max size of a small OB (ATR multiplier).
+// @param obSizeMinMultLarge float: User input for min size of a large OB (ATR multiplier).
+// @param isBullish bool: True for bullish OB (for color selection), false for bearish.
+// @returns [string, float]: [obStrengthString, numericalStrengthScore]. obStrengthString is "Strong", "Moderate", or "Weak". numericalStrengthScore is 0-100.
+assessOrderBlockStrength(float obSize, float obVolume, float smaVol, float atrVal, float volMinMultStrong, float volMinMultNormal, float obSizeMaxMultSmall, float obSizeMinMultLarge, bool isBullish) =>
+    string obStrengthString = "Weak" // Default to Weak
+    float numericalStrengthScore = 50.0 // Base score
+
+    bool isHighVolume = obVolume > smaVol * volMinMultStrong
+    bool isLowVolume = obVolume < smaVol * volMinMultNormal
+    bool isLargeOB = obSize > atrVal * obSizeMinMultLarge
+    bool isSmallOB = obSize < atrVal * obSizeMaxMultSmall
+
+    // Adjust score based on volume
+    if isHighVolume
+        numericalStrengthScore += 25
+    else if isLowVolume
+        numericalStrengthScore -= 15
+    else // Moderate volume
+        numericalStrengthScore += 10
+
+    // Adjust score based on OB size
+    if isLargeOB
+        numericalStrengthScore += 25
+    else if isSmallOB
+        numericalStrengthScore -= 15
+    else // Moderate size
+        numericalStrengthScore += 10
+
+    // Ensure score is within 0-100 range
+    numericalStrengthScore := math.max(0, math.min(100, numericalStrengthScore))
+
+    // Determine obStrengthString based on original criteria (for SL/TP logic)
+    if isHighVolume and isLargeOB
+        obStrengthString := "Strong"
+    else if isLowVolume or isSmallOB
+        obStrengthString := "Weak"
+    else // Not strong, and not (low volume or small size) -> Moderate
+        obStrengthString := "Moderate"
+
+    [obStrengthString, numericalStrengthScore]
+
+// @function getOrderBlockColorByStrength: Calculates OB color based on numerical strength score.
+// @param score float: The numerical strength score (0-100).
+// @param isBullish bool: True for bullish OB, false for bearish.
+// @returns color: The calculated color for the OB.
+getOrderBlockColorByStrength(float score, bool isBullish) =>
+    // Transparency: Higher score = less transparent (more solid). Maps 0-100 score to a 90-40 transparency range.
+    // score 0 -> transparency 90 (very transparent)
+    // score 100 -> transparency 40 (more solid)
+    float transparency = 90 - (score / 100 * 50)
+    transparency := math.max(0, math.min(100, transparency)) // Ensure transparency is within valid range 0-100
+
+    color baseColor = isBullish ? color.green : color.red
+    color.new(baseColor, int(transparency)) // Convert transparency to int for color.new
 
 // --- Core Logic ---
 
@@ -236,6 +331,7 @@ plotshape(series=isCHoCH_Down and showMarketStructure,
 
 // Section: Order Block (OB), SL/TP, and Strength Variables
 // Variables for storing OB details, SL/TP lines, and active levels.
+// Note: Helper functions detectOrderBlock and assessOrderBlockStrength are defined above the "Core Logic" section.
 var box bullishOrderBlock = na   // Stores the box object for the current bullish OB
 var box bearishOrderBlock = na   // Stores the box object for the current bearish OB
 var string bullishOBStrength = "" // Stores strength ("Strong", "Moderate", "Weak") of bullish OB
@@ -255,15 +351,14 @@ atrValue = ta.atr(atrPeriod)
 
 // Section: Visual Styling - Colors
 // Defines colors used for plotting various elements.
-strong_ob_bull_color = color.new(color.green, 60)  // More solid for strong bullish OB
-moderate_ob_bull_color = color.new(color.green, 75) // Adjusted transparency for moderate
-weak_ob_bull_color = color.new(color.green, 85)    // Adjusted transparency for weak bullish OB
-strong_ob_bear_color = color.new(color.red, 60)    // More solid for strong bearish OB
-moderate_ob_bear_color = color.new(color.red, 75)   // Adjusted transparency for moderate
-weak_ob_bear_color = color.new(color.red, 85)      // Adjusted transparency for weak bearish OB
+// Note: Order Block colors are now dynamically generated by getOrderBlockColorByStrength()
+// based on numerical strength score, so static OB color definitions have been removed.
 
 fvg_bull_color = color.new(color.blue, 92)         // Color for bullish FVG boxes
 fvg_bear_color = color.new(color.purple, 92)       // Color for bearish FVG boxes
+
+// Array to store FVG box IDs for pruning
+var box[] fvg_boxes_array = array.new_box()
 
 sl_long_color = color.new(color.maroon, 0)         // Color for long trade Stop Loss lines (dark red)
 tp_long_color = color.new(color.teal, 0)           // Color for long trade Take Profit lines (dark cyan/teal)
@@ -284,47 +379,52 @@ bearishFVG_bottom = low[2]   // Bottom of the FVG is the low of the candle befor
 // Condition for bearish FVG: gap exists, and middle & current candles are bearish (specific rule).
 isBearishFVG = high < low[2] and close[1] < open[1] and close < open
 
-// Plot FVGs if enabled by user. FVGs are extended to the right until price interacts with them (not explicitly coded here, but typical use).
-if showFVGs
+// Plot FVGs if enabled by user and manage pruning.
+if showFVGs and max_fvg_count > 0
     if isBullishFVG
-        box.new(bar_index[2], bullishFVG_top, bar_index, bullishFVG_bottom, border_color=na, bgcolor=fvg_bull_color, extend=extend.right)
+        bullish_fvg_box = box.new(bar_index[2], bullishFVG_top, bar_index, bullishFVG_bottom, border_color=na, bgcolor=fvg_bull_color, extend=extend.right)
+        array.push(fvg_boxes_array, bullish_fvg_box)
+        // Prune oldest FVG if array size exceeds max count
+        if array.size(fvg_boxes_array) > max_fvg_count
+            box_to_delete = array.shift(fvg_boxes_array)
+            box.delete(box_to_delete)
+
     if isBearishFVG
-        box.new(bar_index[2], bearishFVG_top, bar_index, bearishFVG_bottom, border_color=na, bgcolor=fvg_bear_color, extend=extend.right)
+        bearish_fvg_box = box.new(bar_index[2], bearishFVG_top, bar_index, bearishFVG_bottom, border_color=na, bgcolor=fvg_bear_color, extend=extend.right)
+        array.push(fvg_boxes_array, bearish_fvg_box)
+        // Prune oldest FVG if array size exceeds max count
+        if array.size(fvg_boxes_array) > max_fvg_count
+            box_to_delete = array.shift(fvg_boxes_array)
+            box.delete(box_to_delete)
+else if showFVGs and max_fvg_count == 0
+    // If FVGs are shown but max count is 0, delete all existing FVG boxes
+    while array.size(fvg_boxes_array) > 0
+        box_to_delete = array.shift(fvg_boxes_array)
+        box.delete(box_to_delete)
 
 // --- Bullish Order Block (OB) Identification, Strength Assessment, and Plotting ---
 var bool newBullishOBDetectedThisBar = false // Flag for new bullish OB alert
 newBullishOBDetectedThisBar := false         // Reset flag at the start of each bar's logic
 
-// Condition for a potential Bullish Order Block:
-// 1. A Higher High (isHH) must have just formed.
-// 2. There must be a previous swing low (not na(prevSwingLow)) to indicate some prior structure.
-// 3. The candle preceding the current bar (candle[1]) must be a down-close candle (close[1] < open[1]). This is the OB candle.
-if isHH and not na(prevSwingLow) and close[1] < open[1]
-    bullishOB_low = low[1]    // Low of the OB candle
-    bullishOB_high = high[1]  // High of the OB candle
-    bullishOB_size = bullishOB_high - bullishOB_low // Size of the OB candle
-    isValidOBMinSize = bullishOB_size >= atrValue * minOBSizeATR // Check if OB meets minimum size criteria
+// Call detectOrderBlock for Bullish OB
+[isBullishOBValid, bullishOB_low_raw, bullishOB_high_raw] = detectOrderBlock(true, prevSwingLow, lastSwingHigh, isHH, close[1], open[1], low[1], high[1], atrValue, minOBSizeATR)
 
-    // Assess OB Volume Strength
-    obVolume = volume[1] // Volume of the OB candle
-    isHighVolumeBullish = obVolume > smaVolume * volumeMinMultiplierStrong
-    isLowVolumeBullish = obVolume < smaVolume * volumeMinMultiplierNormal
+if isBullishOBValid
+    // A valid bullish OB is detected by the function
+    bullishOB_low = bullishOB_low_raw
+    bullishOB_high = bullishOB_high_raw
+    bullishOB_size = bullishOB_high - bullishOB_low
 
-    // Assess OB Size Strength relative to ATR
-    isLargeOBBullish = bullishOB_size > atrValue * obSizeMinMultiplierLarge
-    isSmallOBBullish = bullishOB_size < atrValue * obSizeMaxMultiplierSmall
+    // Call assessOrderBlockStrength for the valid OB
+    string currentBullishOBStrengthString = ""
+    float bullishNumericalScore = 0.0
+    color currentBullishOBColor = na // Will be set by getOrderBlockColorByStrength
+    [currentBullishOBStrengthString, bullishNumericalScore] = assessOrderBlockStrength(bullishOB_size, volume[1], smaVolume, atrValue, volumeMinMultiplierStrong, volumeMinMultiplierNormal, obSizeMaxMultiplierSmall, obSizeMinMultiplierLarge, true)
+    bullishOBStrength := currentBullishOBStrengthString // Update the global strength variable (used for SL/TP logic)
+    currentBullishOBColor := getOrderBlockColorByStrength(bullishNumericalScore, true) // Get dynamic color
 
-    // Assign Signal Strength based on Volume and OB Size
-    // FVG confluence is not currently factored in but could be added here.
-    if isHighVolumeBullish and isLargeOBBullish
-        bullishOBStrength := "Strong"
-    else if isLowVolumeBullish or isSmallOBBullish
-        bullishOBStrength := "Weak"
-    else
-        bullishOBStrength := "Moderate"
-
-    // If OB is valid (meets min size) and is a new OB (or different from the last drawn one):
-    if isValidOBMinSize and (na(bullishOrderBlock) or bullishOB_low != box.get_bottom(bullishOrderBlock))
+    // If OB is valid and is a new OB (or different from the last drawn one):
+    if na(bullishOrderBlock) or bullishOB_low != box.get_bottom(bullishOrderBlock) or bullishOB_high != box.get_top(bullishOrderBlock) // Added high check for robustness
         // Delete previous bullish OB box and SL/TP lines
         if not na(bullishOrderBlock)
             box.delete(bullishOrderBlock)
@@ -338,10 +438,7 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
         activeBullishSL := na // Reset active SL/TP levels
         activeBullishTP := na
 
-        // Determine OB color based on strength
-        currentBullishOBColor = bullishOBStrength == "Strong" ? strong_ob_bull_color : bullishOBStrength == "Moderate" ? moderate_ob_bull_color : weak_ob_bull_color
-
-        // Plot the new Bullish Order Block if enabled
+        // Plot the new Bullish Order Block if enabled using the color from assessOrderBlockStrength
         if showOrderBlocks
             bullishOrderBlock := box.new(bar_index[1], bullishOB_high, bar_index, bullishOB_low, border_color=na, bgcolor=currentBullishOBColor)
 
@@ -358,23 +455,19 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
 
         // Calculate SL based on ATR or fixed pips
         if use_atr_for_sl
-            // ATR-based SL calculation (actual price set based on strength below, this is just for example if fixed ATR mult was used)
-            // This part of the logic could be simplified if sl_long is always set based on strength multipliers
-            // For now, we calculate a base SL and then adjust if needed, or just set it directly in strength checks
-            sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier) // Default ATR SL for calculation base
+            sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier) // Default, will be overridden by strength
         else
             sl_long := entry_price_long - (fixed_sl_pips * syminfo.mintick) // Fixed pip SL
 
-        // Determine SL price AND Style/Width based on strength, AFTER SL price is initially determined by ATR/Fixed
-        if bullishOBStrength == "Strong"
+        // Determine SL price AND Style/Width based on strength (currentBullishOBStrength)
+        if currentBullishOBStrength == "Strong"
             if use_atr_for_sl
                 sl_long := entry_price_long - (atrValue * sl_strong_atr_multiplier)
-            // If fixed SL, sl_long remains as calculated above (fixed_sl_pips)
             sl_style_long := line.style_solid
             sl_width_long := 2
             tp_style_long := line.style_solid
             tp_width_long := 2
-        else if bullishOBStrength == "Moderate"
+        else if currentBullishOBStrength == "Moderate"
             if use_atr_for_sl
                 sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier)
             sl_style_long := line.style_dashed
@@ -392,9 +485,9 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
         // Calculate TP based on Risk/Reward ratio
         risk_amount_long = entry_price_long - sl_long
         if risk_amount_long > 0 // Ensure risk is positive to prevent erroneous TP
-            if bullishOBStrength == "Strong"
+            if currentBullishOBStrength == "Strong"
                 tp_long := entry_price_long + (risk_amount_long * tp_strong_rr)
-            else if bullishOBStrength == "Moderate"
+            else if currentBullishOBStrength == "Moderate"
                 tp_long := entry_price_long + (risk_amount_long * tp_moderate_rr)
             else // Weak
                 tp_long := entry_price_long + (risk_amount_long * tp_weak_rr)
@@ -411,42 +504,38 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
                 bullishTPline := line.new(bar_index[1], tp_long, bar_index, tp_long, extend=extend.right, color=tp_long_color, style=tp_style_long, width=tp_width_long)
             activeBullishSL := sl_long // Store active SL/TP levels
             activeBullishTP := tp_long
-    // Removed redundant: else if not isValidOBMinSize newBullishOBDetectedThisBar := false
-    // newBullishOBDetectedThisBar is already false by default and only set true if isValidOBMinSize is true.
+else
+    // If not isBullishOBValid, ensure the flag is false.
+    // This handles cases where an OB was previously detected but conditions are no longer met on subsequent bars.
+    // (e.g. if detectOrderBlock was true on bar_index[1] but is false on current bar_index for the same OB candle)
+    // newBullishOBDetectedThisBar is already reset to false at the start of each bar, so this might be redundant
+    // unless specific logic for invalidating an *existing* OB box is needed here.
+    // For now, newBullishOBDetectedThisBar is handled by its initial reset.
+    pass // Explicitly do nothing if OB is not valid
 
 // --- Bearish Order Block (OB) Identification, Strength Assessment, and Plotting ---
 var bool newBearishOBDetectedThisBar = false // Flag for new bearish OB alert
 newBearishOBDetectedThisBar := false        // Reset flag
 
-// Condition for a potential Bearish Order Block:
-// 1. A Lower Low (isLL) must have just formed.
-// 2. There must be a previous swing high (not na(prevSwingHigh)).
-// 3. The candle preceding the current bar (candle[1]) must be an up-close candle (close[1] > open[1]). This is the OB candle.
-if isLL and not na(prevSwingHigh) and close[1] > open[1]
-    bearishOB_low = low[1]    // Low of the OB candle
-    bearishOB_high = high[1]  // High of the OB candle
-    bearishOB_size = bearishOB_high - bearishOB_low // Size of the OB candle
-    isValidOBMinSizeBearish = bearishOB_size >= atrValue * minOBSizeATR // Check min size
+// Call detectOrderBlock for Bearish OB
+[isBearishOBValid, bearishOB_low_raw, bearishOB_high_raw] = detectOrderBlock(false, prevSwingHigh, lastSwingLow, isLL, close[1], open[1], low[1], high[1], atrValue, minOBSizeATR)
 
-    // Assess OB Volume Strength
-    obVolume = volume[1]
-    isHighVolumeBearish = obVolume > smaVolume * volumeMinMultiplierStrong
-    isLowVolumeBearish = obVolume < smaVolume * volumeMinMultiplierNormal
+if isBearishOBValid
+    // A valid bearish OB is detected
+    bearishOB_low = bearishOB_low_raw
+    bearishOB_high = bearishOB_high_raw
+    bearishOB_size = bearishOB_high - bearishOB_low
 
-    // Assess OB Size Strength
-    isLargeOBBearish = bearishOB_size > atrValue * obSizeMinMultiplierLarge
-    isSmallOBBearish = bearishOB_size < atrValue * obSizeMaxMultiplierSmall
-
-    // Assign Signal Strength
-    if isHighVolumeBearish and isLargeOBBearish
-        bearishOBStrength := "Strong"
-    else if isLowVolumeBearish or isSmallOBBearish
-        bearishOBStrength := "Weak"
-    else
-        bearishOBStrength := "Moderate"
+    // Call assessOrderBlockStrength for the valid OB
+    string currentBearishOBStrengthString = ""
+    float bearishNumericalScore = 0.0
+    color currentBearishOBColor = na // Will be set by getOrderBlockColorByStrength
+    [currentBearishOBStrengthString, bearishNumericalScore] = assessOrderBlockStrength(bearishOB_size, volume[1], smaVolume, atrValue, volumeMinMultiplierStrong, volumeMinMultiplierNormal, obSizeMaxMultiplierSmall, obSizeMinMultiplierLarge, false)
+    bearishOBStrength := currentBearishOBStrengthString // Update the global strength variable (used for SL/TP logic)
+    currentBearishOBColor := getOrderBlockColorByStrength(bearishNumericalScore, false) // Get dynamic color
 
     // If OB is valid and new/changed:
-    if isValidOBMinSizeBearish and (na(bearishOrderBlock) or bearishOB_high != box.get_top(bearishOrderBlock))
+    if na(bearishOrderBlock) or bearishOB_low != box.get_bottom(bearishOrderBlock) or bearishOB_high != box.get_top(bearishOrderBlock) // Added low check
         // Delete previous bearish OB box and SL/TP lines
         if not na(bearishOrderBlock)
             box.delete(bearishOrderBlock)
@@ -460,10 +549,7 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
         activeBearishSL := na
         activeBearishTP := na
 
-        // Determine OB color
-        currentBearishOBColor = bearishOBStrength == "Strong" ? strong_ob_bear_color : bearishOBStrength == "Moderate" ? moderate_ob_bear_color : weak_ob_bear_color
-
-        // Plot new Bearish Order Block if enabled
+        // Plot new Bearish Order Block if enabled using the color from assessOrderBlockStrength
         if showOrderBlocks
             bearishOrderBlock := box.new(bar_index[1], bearishOB_high, bar_index, bearishOB_low, border_color=na, bgcolor=currentBearishOBColor)
 
@@ -480,19 +566,19 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
 
         // Calculate SL based on ATR or fixed pips
         if use_atr_for_sl
-            sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier) // Default ATR SL for calculation base
+            sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier) // Default, will be overridden by strength
         else
             sl_short := entry_price_short + (fixed_sl_pips * syminfo.mintick)
 
-        // Determine SL price AND Style/Width based on strength, AFTER SL price is initially determined by ATR/Fixed
-        if bearishOBStrength == "Strong"
+        // Determine SL price AND Style/Width based on strength (currentBearishOBStrength)
+        if currentBearishOBStrength == "Strong"
             if use_atr_for_sl
                 sl_short := entry_price_short + (atrValue * sl_strong_atr_multiplier)
             sl_style_short := line.style_solid
             sl_width_short := 2
             tp_style_short := line.style_solid
             tp_width_short := 2
-        else if bearishOBStrength == "Moderate"
+        else if currentBearishOBStrength == "Moderate"
             if use_atr_for_sl
                 sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier)
             sl_style_short := line.style_dashed
@@ -510,9 +596,9 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
         // Calculate TP
         risk_amount_short = sl_short - entry_price_short
         if risk_amount_short > 0
-            if bearishOBStrength == "Strong"
+            if currentBearishOBStrength == "Strong"
                 tp_short := entry_price_short - (risk_amount_short * tp_strong_rr)
-            else if bearishOBStrength == "Moderate"
+            else if currentBearishOBStrength == "Moderate"
                 tp_short := entry_price_short - (risk_amount_short * tp_moderate_rr)
             else // Weak
                 tp_short := entry_price_short - (risk_amount_short * tp_weak_rr)
@@ -529,8 +615,10 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
                 bearishTPline := line.new(bar_index[1], tp_short, bar_index, tp_short, extend=extend.right, color=tp_short_color, style=tp_style_short, width=tp_width_short)
             activeBearishSL := sl_short // Store active SL/TP
             activeBearishTP := tp_short
-    else if not isValidOBMinSizeBearish // If OB doesn't meet min size
-        newBearishOBDetectedThisBar := false
+else
+    // If not isBearishOBValid, ensure the flag is false.
+    // Similar to bullish logic, newBearishOBDetectedThisBar is reset at the start of each bar.
+    pass // Explicitly do nothing
 
 // Section: Alert Logic
 
