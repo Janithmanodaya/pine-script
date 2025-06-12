@@ -217,8 +217,7 @@ plotshape(series=isBOS_Up and showMarketStructure,
           color=color.new(color.green, 0),
           style=shape.labeldown,
           textcolor=color.white,
-          size=size.tiny,
-          textalign=text.align_center)
+          size=size.tiny)
 
 // BOS Down: Plotted at the LL that caused the BOS
 plotshape(series=isBOS_Down and showMarketStructure,
@@ -228,8 +227,7 @@ plotshape(series=isBOS_Down and showMarketStructure,
           color=color.new(color.red, 0),
           style=shape.labelup,
           textcolor=color.white,
-          size=size.tiny,
-          textalign=text.align_center)
+          size=size.tiny)
 
 // CHoCH Up: Plotted at the HH that caused the Bullish CHoCH
 plotshape(series=isCHoCH_Up and showMarketStructure,
@@ -239,8 +237,7 @@ plotshape(series=isCHoCH_Up and showMarketStructure,
           color=color.new(color.blue, 0),
           style=shape.labeldown,
           textcolor=color.white,
-          size=size.tiny,
-          textalign=text.align_center)
+          size=size.tiny)
 
 // CHoCH Down: Plotted at the LL that caused the Bearish CHoCH
 plotshape(series=isCHoCH_Down and showMarketStructure,
@@ -250,8 +247,7 @@ plotshape(series=isCHoCH_Down and showMarketStructure,
           color=color.new(color.orange, 0),
           style=shape.labelup,
           textcolor=color.white,
-          size=size.tiny,
-          textalign=text.align_center)
+          size=size.tiny)
 
 // Section: Order Block (OB), SL/TP, and Strength Variables
 // Variables for storing OB details, SL/TP lines, and active levels.
