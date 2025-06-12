@@ -55,6 +55,18 @@ proximity_atr_multiplier = input.float(0.25, title="SL/TP Proximity ATR Multipli
 
 // --- End Inputs ---
 
+// --- Constants ---
+// Signal Strength Constants
+var string STR_STRONG = "Strong"
+var string STR_MODERATE = "Moderate"
+var string STR_WEAK = "Weak"
+
+// Market Trend Constants
+var string TREND_NEUTRAL = "Neutral"
+var string TREND_UPTREND = "Uptrend"
+var string TREND_DOWNTREND = "Downtrend"
+// --- End Constants ---
+
 // --- Core Logic ---
 
 // Section: Market Structure Identification
@@ -71,7 +83,7 @@ var float lastSwingHigh = na
 var float lastSwingLow = na
 var float prevSwingHigh = na // Previous swing high before the last one
 var float prevSwingLow = na  // Previous swing low before the last one
-var string marketTrend = "Neutral" // Possible states: "Neutral", "Uptrend", "Downtrend"
+var string marketTrend = TREND_NEUTRAL // Possible states: "Neutral", "Uptrend", "Downtrend"
 var float lastConfirmedSwingHighForTrend = na // Store the HH that confirmed uptrend / BOS high
 var float lastConfirmedSwingLowForTrend = na  // Store the LL that confirmed downtrend / BOS low
 var float criticalSwingHighForChOCh = na     // Last significant LH in a downtrend to watch for Bullish CHoCH
@@ -108,84 +120,91 @@ bool isCHoCH_Down = false
 // Critical points for CHoCH are now set when a trend is established by CHoCH or confirmed by BOS.
 
 // 2. Change of Character (CHoCH) Detection - This can flip the marketTrend
-// Bearish CHoCH: Current trend is Uptrend (or Neutral, allowing first CHoCH), and price makes a Lower Low breaking the last critical Higher Low.
-if marketTrend == "Uptrend" and isLL and not na(criticalSwingLowForChOCh) and lastSwingLow < criticalSwingLowForChOCh
+
+// Bearish CHoCH from Uptrend:
+// Scenario: Current trend is Uptrend, and price makes a Lower Low (LL) breaking below the 'criticalSwingLowForChOCh' (the last significant Higher Low).
+if marketTrend == TREND_UPTREND and isLL and not na(criticalSwingLowForChOCh) and lastSwingLow < criticalSwingLowForChOCh
     isCHoCH_Down := true
-    string newMarketTrend_BearCH = "Downtrend"
-    marketTrend := newMarketTrend_BearCH
-    float newLCSLFT_BearCH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_BearCH
-    float newLCSHFT_BearCH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_BearCH
-    float newCSHFCH_BearCH = lastSwingHigh
-    criticalSwingHighForChOCh := newCSHFCH_BearCH
-    float newCSLFCH_BearCH = na
-    criticalSwingLowForChOCh := newCSLFCH_BearCH
-else if marketTrend == "Neutral" and isLL and not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh < prevSwingHigh // First structure is LL after LH from neutral
+    marketTrend := TREND_DOWNTREND // Trend flips to Downtrend.
+    lastConfirmedSwingLowForTrend := lastSwingLow // This LL is the first confirmation of the new downtrend.
+    lastConfirmedSwingHighForTrend := lastSwingHigh // The LH before this LL.
+    // The LH that formed before this CHoCH-inducing LL is now the critical point to break for a Bullish CHoCH.
+    criticalSwingHighForChOCh := lastSwingHigh
+    // The previous critical HL is broken/invalidated; a new critical HL will be defined if an uptrend re-establishes.
+    criticalSwingLowForChOCh := na
+
+// Bearish CHoCH from Neutral (Initial Downtrend Formation):
+// Scenario: Current trend is Neutral, and price forms a Lower Low (LL) after a Lower High (LH), indicating initial bearish market structure.
+else if marketTrend == TREND_NEUTRAL and isLL and not na(lastSwingHigh) and not na(prevSwingHigh) and lastSwingHigh < prevSwingHigh // First structure is LL after LH from neutral
     isCHoCH_Down := true
-    string newMarketTrend_NeutralLL_CH = "Downtrend"
-    marketTrend := newMarketTrend_NeutralLL_CH
-    float newLCSLFT_NeutralLL_CH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_NeutralLL_CH
-    float newLCSHFT_NeutralLL_CH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_NeutralLL_CH
-    float newCSHFCH_NeutralLL_CH = lastSwingHigh
-    criticalSwingHighForChOCh := newCSHFCH_NeutralLL_CH
-    float newCSLFCH_NeutralLL_CH = na
-    criticalSwingLowForChOCh := newCSLFCH_NeutralLL_CH
+    marketTrend := TREND_DOWNTREND // Trend set to Downtrend.
+    lastConfirmedSwingLowForTrend := lastSwingLow // This LL confirms the new downtrend.
+    lastConfirmedSwingHighForTrend := lastSwingHigh // The LH before this LL.
+    // The LH is now the critical point; if broken, it would signal a potential Bullish CHoCH.
+    criticalSwingHighForChOCh := lastSwingHigh
+    // No critical HL defined yet as an uptrend hasn't been established to provide one.
+    criticalSwingLowForChOCh := na
 
 
-// Bullish CHoCH: Current trend is Downtrend (or Neutral), and price makes a Higher High breaking the last critical Lower High.
-if (marketTrend == "Downtrend" or marketTrend == "Neutral") and isHH and not na(criticalSwingHighForChOCh) and lastSwingHigh > criticalSwingHighForChOCh
+// Bullish CHoCH from Downtrend/Neutral:
+// Scenario: Current trend is Downtrend or Neutral, and price makes a Higher High (HH) breaking above the 'criticalSwingHighForChOCh' (the last significant Lower High).
+if (marketTrend == TREND_DOWNTREND or marketTrend == TREND_NEUTRAL) and isHH and not na(criticalSwingHighForChOCh) and lastSwingHigh > criticalSwingHighForChOCh
     isCHoCH_Up := true
-    string newMarketTrend_BullCH = "Uptrend"
-    marketTrend := newMarketTrend_BullCH
-    float newLCSHFT_BullCH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_BullCH
-    float newLCSLFT_BullCH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_BullCH
-    float newCSLFCH_BullCH = lastSwingLow  // Removed float() cast
-    criticalSwingLowForChOCh := newCSLFCH_BullCH
-    float newCSHFCH_BullCH = na
-    criticalSwingHighForChOCh := newCSHFCH_BullCH
-else if marketTrend == "Neutral" and isHH and not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow // First structure is HH after HL from neutral
+    marketTrend := TREND_UPTREND // Trend flips/sets to Uptrend.
+    lastConfirmedSwingHighForTrend := lastSwingHigh // This HH is the first confirmation of the new uptrend.
+    lastConfirmedSwingLowForTrend := lastSwingLow // The HL before this HH.
+    // The HL that formed before this CHoCH-inducing HH is now the critical point to break for a Bearish CHoCH.
+    criticalSwingLowForChOCh := lastSwingLow
+    // The previous critical LH is broken/invalidated; a new critical LH will be defined if a downtrend re-establishes.
+    criticalSwingHighForChOCh := na
+
+// Bullish CHoCH from Neutral (Initial Uptrend Formation):
+// Scenario: Current trend is Neutral, and price forms a Higher High (HH) after a Higher Low (HL), indicating initial bullish market structure.
+else if marketTrend == TREND_NEUTRAL and isHH and not na(lastSwingLow) and not na(prevSwingLow) and lastSwingLow > prevSwingLow // First structure is HH after HL from neutral
     isCHoCH_Up := true
-    string newMarketTrend_NeutralHH_CH = "Uptrend"
-    marketTrend := newMarketTrend_NeutralHH_CH
-    float newLCSHFT_NeutralHH_CH = lastSwingHigh
-    lastConfirmedSwingHighForTrend := newLCSHFT_NeutralHH_CH
-    float newLCSLFT_NeutralHH_CH = lastSwingLow
-    lastConfirmedSwingLowForTrend := newLCSLFT_NeutralHH_CH
-    float newCSLFCH_NeutralHH_CH = lastSwingLow // Removed float() cast
-    criticalSwingLowForChOCh := newCSLFCH_NeutralHH_CH
-    float newCSHFCH_NeutralHH_CH = na
-    criticalSwingHighForChOCh := newCSHFCH_NeutralHH_CH
+    marketTrend := TREND_UPTREND // Trend set to Uptrend.
+    lastConfirmedSwingHighForTrend := lastSwingHigh // This HH confirms the new uptrend.
+    lastConfirmedSwingLowForTrend := lastSwingLow // The HL before this HH.
+    // The HL is now the critical point; if broken, it would signal a potential Bearish CHoCH.
+    criticalSwingLowForChOCh := lastSwingLow
+    // No critical LH defined yet as a downtrend hasn't been established to provide one.
+    criticalSwingHighForChOCh := na
 
 
 // 3. Break of Structure (BOS) Detection - Confirms the current (potentially CHoCH'd) trend
 // Check for Bullish BOS: New HH breaks the last high that confirmed/started the uptrend.
-if marketTrend == "Uptrend" and isHH and not isCHoCH_Up // Ensure it's not the CHoCH bar itself
+if marketTrend == TREND_UPTREND and isHH and not isCHoCH_Up // Ensure it's not the CHoCH bar itself (as CHoCH is also a type of break but handled differently)
+    // This is a standard BOS in an established uptrend.
     if not na(lastConfirmedSwingHighForTrend) and lastSwingHigh > lastConfirmedSwingHighForTrend
         isBOS_Up := true
-        lastConfirmedSwingHighForTrend := lastSwingHigh // Update the confirmation high to this new BOS high
+        lastConfirmedSwingHighForTrend := lastSwingHigh // Update the confirmation high to this new BOS high.
         if not na(lastSwingLow)
-            criticalSwingLowForChOCh := lastSwingLow   // The HL before BOS is now the critical low
+            // The Higher Low (HL) formed before this BOS is now the critical level.
+            // If price breaks below this HL, it would indicate a potential Bearish CHoCH.
+            criticalSwingLowForChOCh := lastSwingLow
+    // This handles the scenario where an uptrend was initiated by a CHoCH, and this is the first HH confirming that new uptrend.
     else if na(lastConfirmedSwingHighForTrend) // If uptrend is set but no HH confirmed it yet (e.g. first leg after CHoCH)
-        lastConfirmedSwingHighForTrend := lastSwingHigh // This HH now confirms it
+        lastConfirmedSwingHighForTrend := lastSwingHigh // This HH now confirms the uptrend.
         if not na(lastSwingLow)
-             criticalSwingLowForChOCh := lastSwingLow
+            // The HL formed before this confirming HH becomes the critical swing low for a potential Bearish CHoCH.
+            criticalSwingLowForChOCh := lastSwingLow
 
 
 // Check for Bearish BOS: New LL breaks the last low that confirmed/started the downtrend.
-if marketTrend == "Downtrend" and isLL and not isCHoCH_Down // Ensure it's not the CHoCH bar itself
+if marketTrend == TREND_DOWNTREND and isLL and not isCHoCH_Down // Ensure it's not the CHoCH bar itself (as CHoCH is also a type of break but handled differently)
+    // This is a standard BOS in an established downtrend.
     if not na(lastConfirmedSwingLowForTrend) and lastSwingLow < lastConfirmedSwingLowForTrend
         isBOS_Down := true
-        lastConfirmedSwingLowForTrend := lastSwingLow // Update the confirmation low to this new BOS low
+        lastConfirmedSwingLowForTrend := lastSwingLow // Update the confirmation low to this new BOS low.
         if not na(lastSwingHigh)
-            criticalSwingHighForChOCh := lastSwingHigh // The LH before BOS is now the critical high
-    else if na(lastConfirmedSwingLowForTrend) // If downtrend is set but no LL confirmed it yet
-        lastConfirmedSwingLowForTrend := lastSwingLow // This LL now confirms it
+            // The Lower High (LH) formed before this BOS is now the critical level.
+            // If price breaks above this LH, it would indicate a potential Bullish CHoCH.
+            criticalSwingHighForChOCh := lastSwingHigh
+    // This handles the scenario where a downtrend was initiated by a CHoCH, and this is the first LL confirming that new downtrend.
+    else if na(lastConfirmedSwingLowForTrend) // If downtrend is set but no LL confirmed it yet (e.g. first leg after CHoCH)
+        lastConfirmedSwingLowForTrend := lastSwingLow // This LL now confirms the downtrend.
         if not na(lastSwingHigh)
+            // The LH formed before this confirming LL becomes the critical swing high for a potential Bullish CHoCH.
             criticalSwingHighForChOCh := lastSwingHigh
 
 
@@ -317,11 +336,11 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
     // Assign Signal Strength based on Volume and OB Size
     // FVG confluence is not currently factored in but could be added here.
     if isHighVolumeBullish and isLargeOBBullish
-        bullishOBStrength := "Strong"
+        bullishOBStrength := STR_STRONG
     else if isLowVolumeBullish or isSmallOBBullish
-        bullishOBStrength := "Weak"
+        bullishOBStrength := STR_WEAK
     else
-        bullishOBStrength := "Moderate"
+        bullishOBStrength := STR_MODERATE
 
     // If OB is valid (meets min size) and is a new OB (or different from the last drawn one):
     if isValidOBMinSize and (na(bullishOrderBlock) or bullishOB_low != box.get_bottom(bullishOrderBlock))
@@ -339,7 +358,7 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
         activeBullishTP := na
 
         // Determine OB color based on strength
-        currentBullishOBColor = bullishOBStrength == "Strong" ? strong_ob_bull_color : bullishOBStrength == "Moderate" ? moderate_ob_bull_color : weak_ob_bull_color
+        currentBullishOBColor = bullishOBStrength == STR_STRONG ? strong_ob_bull_color : bullishOBStrength == STR_MODERATE ? moderate_ob_bull_color : weak_ob_bull_color
 
         // Plot the new Bullish Order Block if enabled
         if showOrderBlocks
@@ -351,39 +370,37 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
         entry_price_long = bullishOB_high // Entry assumed at the high of the OB candle
         sl_long = 0.0
         tp_long = 0.0
+
+        // Determine SL ATR Multiplier based on strength
+        float current_sl_atr_multiplier_bullish = sl_moderate_atr_multiplier // Default to moderate
+        if bullishOBStrength == STR_STRONG
+            current_sl_atr_multiplier_bullish := sl_strong_atr_multiplier
+        else if bullishOBStrength == STR_WEAK
+            current_sl_atr_multiplier_bullish := sl_weak_atr_multiplier
+
+        // Calculate SL based on ATR or fixed pips
+        if use_atr_for_sl
+            sl_long := entry_price_long - (atrValue * current_sl_atr_multiplier_bullish)
+        else
+            sl_long := entry_price_long - (fixed_sl_pips * syminfo.mintick) // Fixed pip SL
+
+        // Determine Line Style and Width based on strength
         sl_style_long = line.style_dashed // Default SL/TP line style/width
         sl_width_long = 1
         tp_style_long = line.style_dashed
         tp_width_long = 1
 
-        // Calculate SL based on ATR or fixed pips
-        if use_atr_for_sl
-            // ATR-based SL calculation (actual price set based on strength below, this is just for example if fixed ATR mult was used)
-            // This part of the logic could be simplified if sl_long is always set based on strength multipliers
-            // For now, we calculate a base SL and then adjust if needed, or just set it directly in strength checks
-            sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier) // Default ATR SL for calculation base
-        else
-            sl_long := entry_price_long - (fixed_sl_pips * syminfo.mintick) // Fixed pip SL
-
-        // Determine SL price AND Style/Width based on strength, AFTER SL price is initially determined by ATR/Fixed
-        if bullishOBStrength == "Strong"
-            if use_atr_for_sl
-                sl_long := entry_price_long - (atrValue * sl_strong_atr_multiplier)
-            // If fixed SL, sl_long remains as calculated above (fixed_sl_pips)
+        if bullishOBStrength == STR_STRONG
             sl_style_long := line.style_solid
             sl_width_long := 2
             tp_style_long := line.style_solid
             tp_width_long := 2
-        else if bullishOBStrength == "Moderate"
-            if use_atr_for_sl
-                sl_long := entry_price_long - (atrValue * sl_moderate_atr_multiplier)
+        else if bullishOBStrength == STR_MODERATE
             sl_style_long := line.style_dashed
             sl_width_long := 1
             tp_style_long := line.style_dashed
             tp_width_long := 1
         else // Weak
-            if use_atr_for_sl
-                sl_long := entry_price_long - (atrValue * sl_weak_atr_multiplier)
             sl_style_long := line.style_dotted
             sl_width_long := 1
             tp_style_long := line.style_dotted
@@ -392,9 +409,9 @@ if isHH and not na(prevSwingLow) and close[1] < open[1]
         // Calculate TP based on Risk/Reward ratio
         risk_amount_long = entry_price_long - sl_long
         if risk_amount_long > 0 // Ensure risk is positive to prevent erroneous TP
-            if bullishOBStrength == "Strong"
+            if bullishOBStrength == STR_STRONG
                 tp_long := entry_price_long + (risk_amount_long * tp_strong_rr)
-            else if bullishOBStrength == "Moderate"
+            else if bullishOBStrength == STR_MODERATE
                 tp_long := entry_price_long + (risk_amount_long * tp_moderate_rr)
             else // Weak
                 tp_long := entry_price_long + (risk_amount_long * tp_weak_rr)
@@ -439,11 +456,11 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
 
     // Assign Signal Strength
     if isHighVolumeBearish and isLargeOBBearish
-        bearishOBStrength := "Strong"
+        bearishOBStrength := STR_STRONG
     else if isLowVolumeBearish or isSmallOBBearish
-        bearishOBStrength := "Weak"
+        bearishOBStrength := STR_WEAK
     else
-        bearishOBStrength := "Moderate"
+        bearishOBStrength := STR_MODERATE
 
     // If OB is valid and new/changed:
     if isValidOBMinSizeBearish and (na(bearishOrderBlock) or bearishOB_high != box.get_top(bearishOrderBlock))
@@ -461,7 +478,7 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
         activeBearishTP := na
 
         // Determine OB color
-        currentBearishOBColor = bearishOBStrength == "Strong" ? strong_ob_bear_color : bearishOBStrength == "Moderate" ? moderate_ob_bear_color : weak_ob_bear_color
+        currentBearishOBColor = bearishOBStrength == STR_STRONG ? strong_ob_bear_color : bearishOBStrength == STR_MODERATE ? moderate_ob_bear_color : weak_ob_bear_color
 
         // Plot new Bearish Order Block if enabled
         if showOrderBlocks
@@ -473,35 +490,37 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
         entry_price_short = bearishOB_low // Entry assumed at the low of the OB
         sl_short = 0.0
         tp_short = 0.0
+
+        // Determine SL ATR Multiplier based on strength
+        float current_sl_atr_multiplier_bearish = sl_moderate_atr_multiplier // Default to moderate
+        if bearishOBStrength == STR_STRONG
+            current_sl_atr_multiplier_bearish := sl_strong_atr_multiplier
+        else if bearishOBStrength == STR_WEAK
+            current_sl_atr_multiplier_bearish := sl_weak_atr_multiplier
+
+        // Calculate SL based on ATR or fixed pips
+        if use_atr_for_sl
+            sl_short := entry_price_short + (atrValue * current_sl_atr_multiplier_bearish)
+        else
+            sl_short := entry_price_short + (fixed_sl_pips * syminfo.mintick)
+
+        // Determine Line Style and Width based on strength
         sl_style_short = line.style_dashed // Default line styles/widths
         sl_width_short = 1
         tp_style_short = line.style_dashed
         tp_width_short = 1
 
-        // Calculate SL based on ATR or fixed pips
-        if use_atr_for_sl
-            sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier) // Default ATR SL for calculation base
-        else
-            sl_short := entry_price_short + (fixed_sl_pips * syminfo.mintick)
-
-        // Determine SL price AND Style/Width based on strength, AFTER SL price is initially determined by ATR/Fixed
-        if bearishOBStrength == "Strong"
-            if use_atr_for_sl
-                sl_short := entry_price_short + (atrValue * sl_strong_atr_multiplier)
+        if bearishOBStrength == STR_STRONG
             sl_style_short := line.style_solid
             sl_width_short := 2
             tp_style_short := line.style_solid
             tp_width_short := 2
-        else if bearishOBStrength == "Moderate"
-            if use_atr_for_sl
-                sl_short := entry_price_short + (atrValue * sl_moderate_atr_multiplier)
+        else if bearishOBStrength == STR_MODERATE
             sl_style_short := line.style_dashed
             sl_width_short := 1
             tp_style_short := line.style_dashed
             tp_width_short := 1
         else // Weak
-            if use_atr_for_sl
-                sl_short := entry_price_short + (atrValue * sl_weak_atr_multiplier)
             sl_style_short := line.style_dotted
             sl_width_short := 1
             tp_style_short := line.style_dotted
@@ -510,9 +529,9 @@ if isLL and not na(prevSwingHigh) and close[1] > open[1]
         // Calculate TP
         risk_amount_short = sl_short - entry_price_short
         if risk_amount_short > 0
-            if bearishOBStrength == "Strong"
+            if bearishOBStrength == STR_STRONG
                 tp_short := entry_price_short - (risk_amount_short * tp_strong_rr)
-            else if bearishOBStrength == "Moderate"
+            else if bearishOBStrength == STR_MODERATE
                 tp_short := entry_price_short - (risk_amount_short * tp_moderate_rr)
             else // Weak
                 tp_short := entry_price_short - (risk_amount_short * tp_weak_rr)
